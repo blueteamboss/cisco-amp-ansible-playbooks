@@ -1,0 +1,70 @@
+- name: Run Timed Diagnostic for Cisco Secure Endpoint Connector
+  hosts: all
+  vars_prompt:
+    - name: debug_length
+      prompt: 'Enter length you want to run the diagnostic for - '
+      default: '600'
+      private: false
+
+    - name: download_path
+      prompt: 'Enter the path on local machine to download diagnostic bundle to - '
+      default: '~/Downloads'
+      private: false
+  become: true
+  tasks:
+    - name: 'Create a folder to store the diagnostic files in'
+      ansible.builtin.file:
+        path: "/opt/debugs"
+        state: directory
+        mode: '0644'
+        owner: 'root'
+        group: 'root'
+
+    - name: 'Ensure Python3-pexpect is installed'
+      ansible.builtin.apt:
+        name: 'python3-pexpect'
+        state: present
+
+    - name: 'Set the connector debug level to 1 (Debug Enabled)'
+      ansible.builtin.expect:
+        command: "/opt/cisco/amp/bin/ampcli"
+        responses:
+          "ampcli>":
+            - "debuglevel 1\n"
+            - "q\n"
+
+    - name: 'Wait the specific time before gathering the diagnostic bundle (10mins default)'
+      ansible.builtin.wait_for:
+        timeout: "{{ debug_length }}"
+      delegate_to: localhost
+
+    - name: 'Run the connector support tool to gather the diagnostic file'
+      ansible.builtin.command: /opt/cisco/amp/bin/ampsupport -o /opt/debugs -a
+
+    - name: Locate the newly created diagnostic file
+      ansible.builtin.find:
+        paths: /opt/debugs/
+        age: -1d
+        patterns: "*.zip"
+      register: amp_support_filenames
+
+    - name: 'Download the diagnostic files to the local host'
+      ansible.builtin.fetch:
+        src: "{{ item.path }}"
+        dest: "{{ download_path }}/{{ inventory_hostname }}_AmpSupportBundle_{{ ansible_date_time.iso8601_basic }}.zip"
+        flat: true
+      loop: "{{ amp_support_filenames.files }}"
+
+    - name: 'Cleanup the diagnostic files from the remote host'
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ amp_support_filenames.files }}"
+
+    - name: 'Set the connector debug level to 0 (Debug Disabled)'
+      ansible.builtin.expect:
+        command: "/opt/cisco/amp/bin/ampcli"
+        responses:
+          "ampcli>":
+            - "debuglevel 0\n"
+            - "q\n"

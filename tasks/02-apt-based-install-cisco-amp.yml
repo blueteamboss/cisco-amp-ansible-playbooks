@@ -1,0 +1,31 @@
+- name: 'Download and Install Cisco Secure Endpoint Connector'
+  hosts: all
+  vars_prompt:
+    - name: amp_download_url
+      prompt: "Enter the download URL provided from the Secure Endpoint Console"
+      private: false
+  become: true
+  tasks:
+    - name: Ensure debsig-verify is installed
+      ansible.builtin.apt:
+        name: "debsig-verify"
+        state: present
+        update_cache: true
+
+    - name: Kernel Headers
+      ansible.builtin.apt:
+        name: linux-headers-generic
+        state: present
+        update_cache: false
+
+    - name: Download AMP Connector Installer
+      ansible.builtin.get_url:
+        url: "{{ amp_download_url }}"
+        dest: /tmp/cisco_amp_installer.deb
+        mode: '0740'
+        owner: 'root'
+        group: 'root'
+
+    - name: Install the connector if Validation Completed
+      ansible.builtin.apt:
+        deb: /tmp/cisco_amp_installer.deb

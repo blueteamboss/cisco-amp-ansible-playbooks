@@ -1,0 +1,73 @@
+- name: 'Uninstall and Purge Cisco Secure Endpoint Connector'
+  hosts: all
+  become: true
+  tasks:
+    - name: Remove the Cisco AMP Connector
+      ansible.builtin.apt:
+        name: "ciscoampconnector"
+        state: "absent"
+
+    - name: Remove the Cisco Orbital Agent
+      ansible.builtin.apt:
+        name: "cisco-orbital"
+        state: "absent"
+
+    - name: Check if /opt/cisco/amp/bin/purge_amp_local_data is Present
+      ansible.builtin.stat:
+        path: /opt/cisco/amp/bin/purge_amp_local_data
+      register: amp_purge_state
+
+    - name: 'Purge all remnants of AMP and Orbital (Using AMP Purge Script if present)'
+      ansible.builtin.command: /opt/cisco/amp/bin/purge_amp_local_data
+      when: amp_purge_state.stat.exists
+
+    - name: Get Service Status
+      ansible.builtin.service_facts:
+      register: services
+
+    - name: Disable Cisco AMP Service
+      ansible.builtin.systemd_service:
+        name: 'cisco-amp'
+        enabled: false
+        state: stopped
+      when: "'cisco-amp.service' in 'services'"
+
+    - name: Disable Cisco AMP Monitor Service
+      ansible.builtin.systemd_service:
+        name: 'cisco-ampmon'
+        enabled: false
+        state: stopped
+      when: "'cisco-ampmon.service' in 'services'"
+
+    - name: Disable Cisco AMP Updater Service
+      ansible.builtin.systemd_service:
+        name: 'cisco-ampupdater'
+        enabled: false
+        state: stopped
+      when: "'cisco-ampupdater.service' in 'services'"
+
+    - name: Check if /lib/systemd/system/cisco-amp.service is Present
+      ansible.builtin.stat:
+        path: /lib/systemd/system/cisco-amp.service
+      register: amp_service_state
+
+    - name: Delete All AMP Services if Present
+      ansible.builtin.file:
+        path: '/lib/systemd/system/{{ item }}'
+        state: absent
+      loop:
+        - 'cisco-amp.service'
+        - 'cisco-ampmon.service'
+        - 'cisco-ampupdater.path'
+        - 'cisco-ampupdater.service'
+        - 'ciscoamp.slice'
+      when: amp_service_state.stat.exists
+
+    - name: Reload Service Daemon
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Delete AMP /opt Directory if Present
+      ansible.builtin.file:
+        path: /opt/cisco/amp
+        state: absent
